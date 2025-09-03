@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from datetime import date, timedelta
 import holidays
+from django.utils import timezone
 
 
 class User(AbstractUser):
@@ -11,24 +12,20 @@ class User(AbstractUser):
         RH = "RH", "Ressources Humaines"
         ADMIN = "ADM", "Administrateur"
 
-    role = models.CharField(
-        max_length=3,
-        choices=Role.choices,
-        default=Role.EMPLOYE
-    )
+    role = models.CharField(max_length=3, choices=Role.choices, default=Role.EMPLOYE)
     department = models.CharField(max_length=100, blank=True, null=True)
-    jours_conges_annuels = models.IntegerField(default=21) 
+    jours_conges_annuels = models.PositiveSmallIntegerField(default=21)
 
     groups = models.ManyToManyField(
         'auth.Group',
-        related_name='conges_user_set',  
+        related_name='conges_users',
         blank=True
     )
     user_permissions = models.ManyToManyField(
         'auth.Permission',
-        related_name='conges_user_permissions_set',
+        related_name='conges_users_permissions',
         blank=True
-)
+    )
 
     def is_manager(self):
         return self.role == self.Role.MANAGER
@@ -42,17 +39,12 @@ class User(AbstractUser):
     def conges_consommes_annee(self, annee=None):
         if annee is None:
             annee = date.today().year
-
         conges_approuves = DemandeConge.objects.filter(
             employe=self,
-            statut='APPROUVE',
+            statut=DemandeConge.Statut.APPROUVE,
             date_debut__year=annee
         )
-
-        total_jours = 0
-        for conge in conges_approuves:
-            total_jours += self.calculer_jours_ouvrables(conge.date_debut, conge.date_fin)
-
+        total_jours = sum(self.calculer_jours_ouvrables(c.date_debut, c.date_fin) for c in conges_approuves)
         return total_jours
 
     def conges_restants(self):
@@ -61,28 +53,23 @@ class User(AbstractUser):
     def calculer_jours_ouvrables(self, date_debut, date_fin):
         jours_total = 0
         current_date = date_debut
-
-        # Jours fériés au Burundi (adapter si nécessaire)
         jours_feries = holidays.BI(years=current_date.year)
-
         while current_date <= date_fin:
             if current_date.weekday() < 5 and current_date not in jours_feries:
                 jours_total += 1
             current_date += timedelta(days=1)
-
         return jours_total
 
 
 class TypeConge(models.Model):
-    TYPES_CHOICES = [
-        ('ANNUEL', 'Congé annuel'),
-        ('MALADIE', 'Congé maladie'),
-        ('MATERNITE', 'Congé maternité'),
-        ('FORMATION', 'Formation'),
-        ('SANS_SOLDE', 'Congé sans solde'),
-    ]
+    class Type(models.TextChoices):
+        ANNUEL = 'ANNUEL', 'Congé annuel'
+        MALADIE = 'MALADIE', 'Congé maladie'
+        MATERNITE = 'MATERNITE', 'Congé maternité'
+        FORMATION = 'FORMATION', 'Formation'
+        SANS_SOLDE = 'SANS_SOLDE', 'Congé sans solde'
 
-    nom = models.CharField(max_length=50, choices=TYPES_CHOICES, unique=True)
+    nom = models.CharField(max_length=50, choices=Type.choices, unique=True)
     description = models.TextField(blank=True)
     necessite_justificatif = models.BooleanField(default=False)
 
@@ -91,23 +78,21 @@ class TypeConge(models.Model):
 
 
 class DemandeConge(models.Model):
-    STATUT_CHOICES = [
-        ('EN_ATTENTE', 'En attente'),
-        ('APPROUVE', 'Approuvé'),
-        ('REJETE', 'Rejeté'),
-    ]
+    class Statut(models.TextChoices):
+        EN_ATTENTE = 'EN_ATTENTE', 'En attente'
+        APPROUVE = 'APPROUVE', 'Approuvé'
+        REJETE = 'REJETE', 'Rejeté'
 
     employe = models.ForeignKey(User, on_delete=models.CASCADE, related_name='demandes_conge')
-    type_conge = models.ForeignKey(TypeConge, on_delete=models.CASCADE)
+    type_conge = models.ForeignKey(TypeConge, on_delete=models.CASCADE, related_name='demandes')
     date_debut = models.DateField()
     date_fin = models.DateField()
     motif_demande = models.TextField()
     justificatif = models.FileField(upload_to='justificatifs/', blank=True, null=True)
 
-    statut = models.CharField(max_length=20, choices=STATUT_CHOICES, default='EN_ATTENTE')
+    statut = models.CharField(max_length=20, choices=Statut.choices, default=Statut.EN_ATTENTE)
     date_demande = models.DateTimeField(auto_now_add=True)
 
-    # Gestion par manager
     manager = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='demandes_gerees')
     date_traitement = models.DateTimeField(null=True, blank=True)
     motif_rejet = models.TextField(blank=True, help_text="Obligatoire en cas de rejet")
@@ -117,29 +102,33 @@ class DemandeConge(models.Model):
 
     def clean(self):
         from django.core.exceptions import ValidationError
-
         if self.date_fin < self.date_debut:
             raise ValidationError("La date de fin doit être postérieure à la date de début")
-
-        if self.statut == 'REJETE' and not self.motif_rejet:
+        if self.statut == self.Statut.REJETE and not self.motif_rejet:
             raise ValidationError("Le motif de rejet est obligatoire")
 
     def nombre_jours_demandes(self):
         return self.employe.calculer_jours_ouvrables(self.date_debut, self.date_fin)
 
     def peut_etre_approuve(self):
-        if self.type_conge.nom == 'ANNUEL':
-            jours_demandes = self.nombre_jours_demandes()
-            conges_restants = self.employe.conges_restants()
-            return jours_demandes <= conges_restants
+        if self.type_conge.nom == TypeConge.Type.ANNUEL:
+            return self.nombre_jours_demandes() <= self.employe.conges_restants()
         return True
 
 
 class NotificationConge(models.Model):
-    demande = models.ForeignKey(DemandeConge, on_delete=models.CASCADE)
-    employe = models.ForeignKey(User, on_delete=models.CASCADE)
+    demande = models.ForeignKey(DemandeConge, on_delete=models.CASCADE, related_name='notifications')
+    employe = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
     message = models.TextField()
     lu = models.BooleanField(default=False)
     date_creation = models.DateTimeField(auto_now_add=True)
     date_lecture = models.DateTimeField(null=True, blank=True)
- 
+
+    def __str__(self):
+        return f"Notification pour {self.employe.username} - {'Lu' if self.lu else 'Non lu'}"
+
+    def marquer_comme_lu(self):
+        if not self.lu:
+            self.lu = True
+            self.date_lecture = timezone.now()
+            self.save()
