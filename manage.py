@@ -7,7 +7,6 @@ import sys
 def main():
     """Run administrative tasks."""
 
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'gestion_conge.settings')
 
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'projconj.settings')
 

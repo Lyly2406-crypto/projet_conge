@@ -1,6 +1,4 @@
 from django.db import models
-
-# Create your models here.
 from django.contrib.auth.models import AbstractUser
 from datetime import date, timedelta
 import holidays
@@ -19,7 +17,18 @@ class User(AbstractUser):
         default=Role.EMPLOYE
     )
     department = models.CharField(max_length=100, blank=True, null=True)
-    jours_conges_annuels = models.IntegerField(default=30)  # ex: 30 jours par an
+    jours_conges_annuels = models.IntegerField(default=21) 
+
+    groups = models.ManyToManyField(
+        'auth.Group',
+        related_name='conges_user_set',  
+        blank=True
+    )
+    user_permissions = models.ManyToManyField(
+        'auth.Permission',
+        related_name='conges_user_permissions_set',
+        blank=True
+)
 
     def is_manager(self):
         return self.role == self.Role.MANAGER
