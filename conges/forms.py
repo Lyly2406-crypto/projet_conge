@@ -125,7 +125,4 @@ class NotificationCongeForm(forms.ModelForm):
         model = NotificationConge
         fields = ['demande', 'employe', 'message', 'lu']
 
-    def marquer_comme_lu(self):
-        self.instance.lu = True
-        self.instance.date_lecture = timezone.now()
-        self.instance.save()
+    
