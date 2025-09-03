@@ -1,0 +1,9 @@
+
+{
+    "python.envFile": "${workspaceFolder}/.env",
+    "django.manage.py": "manage.py",
+    "python.analysis.extraPaths": [
+        "gestion_conge"
+    ],
+    "python.analysis.autoImportCompletions": true
+}
