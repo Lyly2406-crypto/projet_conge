@@ -87,15 +87,15 @@ class TraitementCongeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         # Restreindre aux choix pertinents
         self.fields['statut'].choices = [
-            (DemandeConge.StatutChoices.APPROUVE, "Approuver"),
-            (DemandeConge.StatutChoices.REJETE, "Rejeter"),
+            (DemandeConge.Statut.APPROUVE, "Approuver"),
+            (DemandeConge.Statut.REJETE, "Rejeter"),
         ]
 
     def clean(self):
         cleaned_data = super().clean()
         statut = cleaned_data.get('statut')
         motif_rejet = cleaned_data.get('motif_rejet')
-        if statut == DemandeConge.StatutChoices.REJETE and not motif_rejet:
+        if statut == DemandeConge.Statut.REJETE and not motif_rejet:
             raise forms.ValidationError("Le motif de rejet est obligatoire lors d'un refus")
         return cleaned_data
 
@@ -104,12 +104,7 @@ class TraitementCongeForm(forms.ModelForm):
 # Formulaire pour filtrer les demandes
 # -------------------------------
 class FiltreCongeForm(forms.Form):
-    STATUT_CHOICES = [
-        ('', 'Tous les statuts'),
-        (DemandeConge.StatutChoices.EN_ATTENTE, 'En attente'),
-        (DemandeConge.StatutChoices.APPROUVE, 'Approuvé'),
-        (DemandeConge.StatutChoices.REJETE, 'Rejeté'),
-    ]
+    STATUT_CHOICES = [('', 'Tous les statuts')] + [(s.value, s.label) for s in DemandeConge.Statut ]
 
     date_debut = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}))
     date_fin = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}))

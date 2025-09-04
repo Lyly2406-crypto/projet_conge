@@ -20,6 +20,6 @@ from conges import views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('creer/', views.creer_demande, name='creer_demande'),
+
     
 ]
